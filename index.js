@@ -1,13 +1,21 @@
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
 const cors = require('cors');
+var jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 require('dotenv').config()
 const app = express();
 const port = process.env.PORT || 5000;
 
 // middleware
-app.use(cors());
+app.use(cors({
+  // origin: "*",  // For all origin
+  origin: ['http://127.0.0.1:5173'],
+  // methods:['GET','PUT'],
+  credentials : true
+}));
 app.use(express.json()); // so that we can convert into json data sent to req.body;
+app.use(cookieParser());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.4hz08yb.mongodb.net/?retryWrites=true&w=majority`;
 
@@ -28,6 +36,26 @@ async function run() {
     const serviceCollection = client.db('GeniusCar').collection('services');
     const bookingCollection = client.db('GeniusCar').collection('bookings');
 
+
+    // Auth Related API
+    app.post('/jwt', async(req,res)=>{
+      const user = req.body;
+      console.log(user);
+      // tokenName = jwt.sign(payload, secred, {expiresIn:'1h'})
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '1h'})
+      res
+      .cookie('token', token, {
+        httpOnly: true,
+        secure: false,
+        // maxAge:200000,
+        // secure: process.env.NODE_ENV === 'production', 
+        // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+    })
+      .send({success: true});
+    })
+
+
+    // Services Related API
     app.get('/services', async(req, res)=>{
         const cursor = serviceCollection.find();
         const result = await cursor.toArray();
@@ -40,7 +68,7 @@ async function run() {
 
         const options = {
             // Include only the `title` and `price`, service_id fields in the returned document
-            projection: { title: 1, price: 1, service_id: 1 },
+            projection: { title: 1, price: 1, service_id: 1, img: 1 },
           };
 
         const result = await serviceCollection.findOne(query, options);
@@ -50,10 +78,11 @@ async function run() {
     // Getting bookings Data
     app.get('/bookings', async(req, res)=>{
         console.log(req.query.email);
+        console.log('tok tok token : ', req.cookies.token);
         let query = {}
-        if(req.query?.email){
-            query = {email: req.query.email}
-        }
+        // if(req.query?.email){
+        //     query = {email: req.query.email}
+        // }
         const result = await bookingCollection.find(query).toArray();
         res.send(result)
     })
@@ -64,6 +93,31 @@ async function run() {
         console.log(booking);
         const result = await bookingCollection.insertOne(booking);
         res.send(result)
+    })
+
+    // Delete specific bookings item
+    app.delete('/bookings/:id', async(req, res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)};
+      const result = await bookingCollection.deleteOne(query);
+      res.send(result);
+    })
+
+
+    app.patch('/bookings/:id', async(req, res)=>{
+      const id = req.params.id;
+      // filter or query are same
+      const filter = {_id: new ObjectId(id)};
+      const updatedBookings = req.body;
+      console.log(updatedBookings); 
+      // Specify the update to set a value for the plot field
+      const updateDoc = {
+        $set: {
+          status: updatedBookings.status
+        },
+      };
+      const result = await bookingCollection.updateOne(filter, updateDoc);
+      res.send(result);
     })
 
 
